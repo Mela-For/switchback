@@ -6,15 +6,17 @@ Planning a backpacking or camping trip usually means juggling a map app, a share
 
 > Status: working prototype, actively in development. This repository is a portfolio snapshot; the app is not deployed for public use.
 
-![Screenshot or GIF of the app](docs/screenshot.png)
-
-<!-- Replace with a real screenshot or a short screen recording of a trip being built. This is the single most valuable thing in a portfolio README. -->
-
 ---
 
-## Demo
+## Screenshots
 
-[Link to a 60-90 second demo video, or add 3-4 screenshots here: trip itinerary, map with pinned stops, shared packing list, collaboration view.]
+| Trips | Itinerary | Trip map |
+| :---: | :---: | :---: |
+| <img src="docs/trips.png" alt="Trip list" width="250"> | <img src="docs/tripitinerary.png" alt="Day-by-day itinerary with meals and events" width="250"> | <img src="docs/map.png" alt="Trip map with pinned places and trails" width="250"> |
+| **Where we're sleeping** | **Packing list** | **Meal planning** |
+| <img src="docs/sleeping.png" alt="Nightly lodging with unassigned nights flagged" width="250"> | <img src="docs/packing.png" alt="Shared packing list with assignees" width="250"> | <img src="docs/addmeal.png" alt="Add a meal with recipe, ingredients, and cook" width="250"> |
+| **Trip trails** | **Browse places** | **Browse trails** |
+| <img src="docs/trails.png" alt="Trip trails with distance and elevation totals" width="250"> | <img src="docs/browseplaces.png" alt="Place search results" width="250"> | <img src="docs/searchtrails.png" alt="Trail search powered by OpenStreetMap" width="250"> |
 
 ---
 
