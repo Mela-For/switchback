@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isCollaborator(tripData) {
+      return signedIn() && request.auth.uid in tripData.collaboratorUids;
+    }
+
+    // Ownership and the invite code are only ever changed by addTrip (create)
+    // and deleteTrip (which retires the code), never by update.
+    function ownerAndInviteUnchanged(tripData) {
+      return request.resource.data.ownerUid == tripData.ownerUid
+        && request.resource.data.inviteCode == tripData.inviteCode;
+    }
+
+    // A non-collaborator joining via joinTripByCode(): they may append only
+    // their own uid to collaboratorUids and their own entry to the
+    // collaborators name map, and touch no other field — otherwise a joiner
+    // could overwrite the packing list, itinerary, etc. in the same write.
+    // The trip's invite code must also still be live and point at this trip,
+    // so a trip whose code was retired can't be joined.
+    function isSelfJoin(tripId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let codePath = /databases/$(database)/documents/inviteCodes/$(before.inviteCode);
+      return signedIn()
+        && !(request.auth.uid in before.collaboratorUids)
+        && after.collaboratorUids == before.collaboratorUids.concat([request.auth.uid])
+        && after.diff(before).affectedKeys()
+             .hasOnly(['collaboratorUids', 'collaborators', 'updatedAt'])
+        && after.collaborators.diff(before.collaborators).affectedKeys()
+             .hasOnly([request.auth.uid])
+        && exists(codePath)
+        && get(codePath).data.tripId == tripId;
+    }
+
+    match /trips/{tripId} {
+      // Only existing collaborators can read (get or list) a trip. Joining
+      // happens via the inviteCodes collection below, never by querying
+      // trips directly, so this stays fully scoped to "your own trips."
+      allow read: if isCollaborator(resource.data);
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.collaboratorUids == [request.auth.uid];
+
+      // Existing collaborators can edit any field except ownerUid/inviteCode,
+      // and may only change collaboratorUids by removing their own uid (the
+      // "leave trip" flow) — never anyone else's. A signed-in
+      // non-collaborator may only add themselves (the joinTripByCode() flow,
+      // after resolving an invite code to this tripId) — see isSelfJoin().
+      allow update: if ownerAndInviteUnchanged(resource.data) && (
+        (
+          isCollaborator(resource.data) &&
+          (
+            request.resource.data.collaboratorUids == resource.data.collaboratorUids ||
+            request.resource.data.collaboratorUids ==
+              resource.data.collaboratorUids.removeAll([request.auth.uid])
+          )
+        ) || isSelfJoin(tripId)
+      );
+
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerUid;
+
+      match /messages/{messageId} {
+        allow read: if isCollaborator(
+          get(/databases/$(database)/documents/trips/$(tripId)).data
+        );
+
+        allow create: if isCollaborator(
+          get(/databases/$(database)/documents/trips/$(tripId)).data
+        ) && request.resource.data.senderUid == request.auth.uid;
+
+        // No edit/delete UI exists for chat messages today.
+        allow update, delete: if false;
+      }
+    }
+
+    // Minimal invite-code -> trip lookup, kept separate from `trips` so a
+    // trip's content is never exposed to someone who only has the code.
+    // `get` (fetch by exact code) is allowed for any signed-in user; `list`
+    // is disabled so the collection can't be enumerated to harvest codes.
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      // Only created alongside its trip in addTrip()'s batch: the trip it
+      // points at must (after the batch) be owned by the caller and carry
+      // this exact code — so nobody can mint a code for someone else's trip
+      // or squat codes that don't belong to a real trip of their own.
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['tripId', 'ownerUid'])
+        && request.resource.data.tripId is string
+        && getAfter(/databases/$(database)/documents/trips/$(request.resource.data.tripId))
+             .data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/trips/$(request.resource.data.tripId))
+             .data.inviteCode == code;
+
+      // Only the trip's owner can retire a code (done when the trip itself
+      // is deleted); codes are otherwise immutable once created.
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // Personal trip-history snapshots (see TripHistorySnapshot in src/types/index.ts) — written by
+    // the leaving user only, about their own trips, never shared with or readable by anyone else.
+    // No cross-user access to reason about here, unlike every rule above.
+    match /userTripHistory/{uid}/entries/{entryId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+  }
+}

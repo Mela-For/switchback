@@ -1,0 +1,18 @@
+#!/bin/sh
+# Blocks commits that introduce obvious API-key/private-key patterns into a
+# tracked file. Defense in depth, not the primary defense — real secrets
+# belong in the gitignored .env, not in tracked source. Enable with:
+#   git config core.hooksPath .githooks
+
+pattern='AIzaSy[A-Za-z0-9_-]{33}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
+matches=$(git diff --cached -U0 -- . ':(exclude).env.example' | grep -E '^\+' | grep -vE '^\+\+\+' | grep -E "$pattern")
+
+if [ -n "$matches" ]; then
+  echo "pre-commit: staged changes contain what looks like a live API key or private key:" >&2
+  echo "$matches" >&2
+  echo "Move it to .env (gitignored) instead, or use 'git commit --no-verify' if this is a false positive." >&2
+  exit 1
+fi
+
+exit 0
